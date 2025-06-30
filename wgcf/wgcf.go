@@ -29,7 +29,7 @@ func Reg() {
 	cloudflare.UpdateSourceBoundDeviceActive(ctx, true)
 }
 
-func Get() (tunV4, tunV6, privateKey, publicKey string) {
+func Get() (tunV4, tunV6, privateKey, publicKey, clientId string) {
 	if viper.GetString("private_key") == "" {
 		Reg()
 	}
@@ -37,8 +37,8 @@ func Get() (tunV4, tunV6, privateKey, publicKey string) {
 	device, err := cloudflare.GetSourceDevice(ctx)
 	if err != nil {
 		fmt.Println("using default account")
-		return "172.16.0.2", "2606:4700:110:8377:d6b:2f2b:50be:81ff", "0ADCTQ59Fncpjq4ZqT6qWA3T5TyBTDY0SBuMc0lQu24=", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+		return "172.16.0.2", "2606:4700:110:8c56:2550:c503:641b:174e", "uPZy9zVG2SKR7+gnhIhvUdxEn8DoyEMsV5nazgr1nmQ=", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=", "kE5s"
 	}
 	cloudflare.UpdateSourceBoundDeviceActive(ctx, true)
-	return device.Config.Interface.Addresses.V4, device.Config.Interface.Addresses.V6, viper.GetString("private_key"), device.Config.Peers[0].PublicKey
+	return device.Config.Interface.Addresses.V4, device.Config.Interface.Addresses.V6, viper.GetString("private_key"), device.Config.Peers[0].PublicKey, device.Config.ClientId
 }

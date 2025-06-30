@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	singbox_wireguard "a/singbox/wireguard"
 	"a/wgcf"
+	xray_wireguard "a/xray/wireguard"
 
-	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
 var (
@@ -26,6 +26,7 @@ var (
 	tun_v6      string
 	private_key string
 	public_key  string
+	client_id   string
 	mtu         = 1280
 
 	try       = 3
@@ -37,34 +38,39 @@ var (
 	public_key_bytes         []byte
 	private_key_bytes_string string
 	public_key_bytes_string  string
+
+	client_id_bytes []byte
 )
 
 func init() {
-	tun_v4, tun_v6, private_key, public_key = wgcf.Get()
+	tun_v4, tun_v6, private_key, public_key, client_id = wgcf.Get()
 	// fmt.Println("tun_v4", tun_v4)
 	// fmt.Println("tun_v6", tun_v6)
 	// fmt.Println("private_key", private_key)
 	// fmt.Println("public_key", public_key)
+	// fmt.Println("client_id", client_id)
 
 	private_key_bytes, _ = base64.StdEncoding.DecodeString(private_key)
 	public_key_bytes, _ = base64.StdEncoding.DecodeString(public_key)
 	private_key_bytes_string = hex.EncodeToString(private_key_bytes)
 	public_key_bytes_string = hex.EncodeToString(public_key_bytes)
+
+	client_id_bytes, _ = base64.StdEncoding.DecodeString(client_id)
 }
 
-func IP(endpoint string) (v4, v6, ipsb string) {
-	tun, tnet, err := netstack.CreateNetTUN(
-		[]netip.Addr{netip.MustParseAddr(tun_v4), netip.MustParseAddr(tun_v6)}, // 1
-		[]netip.Addr{netip.MustParseAddr("8.8.8.8")},
-		mtu)
+func IP(endpoint string) (v4, v6 string) {
+	t, _, client, err := xray_wireguard.GetTun([]string{tun_v4, tun_v6}, mtu)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
-	// defer func() {
-	// 	dev.Close()
-	// }()
+	// bind := xray_wireguard.GetBind(true, true, client_id_bytes)
+	// dev := device.NewDevice(t, bind, device.NewLogger(device.LogLevelSilent, ""))
+
+	bind := singbox_wireguard.GetBind(endpoint, client_id_bytes)
+	dev := device.NewDevice(t, bind, device.NewLogger(device.LogLevelSilent, ""))
+
+	// dev := device.NewDevice(t, conn.NewStdNetBind(), device.NewLogger(device.LogLevelSilent, ""))
 
 	err = dev.IpcSet(fmt.Sprintf(`private_key=%s
 public_key=%s
@@ -81,26 +87,20 @@ endpoint=%s
 		log.Panic(err)
 	}
 
-	client := &http.Client{ // client := http.Client
-		Transport: &http.Transport{
-			DialContext: tnet.DialContext,
-		},
-		Timeout: 1 * time.Second,
-	}
-
 	v4 = ""
 	v6 = ""
-	ipsb = ""
 
 	for i := 0; i < try; i++ {
 		resp, err := client.Get("http://api4.ipify.org/")
 		if err != nil {
+			// fmt.Println("api4", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
+			// fmt.Println("api4", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -111,12 +111,14 @@ endpoint=%s
 	for i := 0; i < try; i++ {
 		resp, err := client.Get("http://api6.ipify.org/")
 		if err != nil {
+			// fmt.Println("api6", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
+			// fmt.Println("api6", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -124,26 +126,8 @@ endpoint=%s
 		break
 	}
 
-	for i := 0; i < try; i++ {
-		req, _ := http.NewRequest(http.MethodGet, "http://ip.sb/", nil)
-		req.Header.Set("user-agent", "curl/7.79.1")
-		resp, err := client.Do(req)
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-		ipsb = string(body)
-		break
-	}
-
 	dev.Close()
-	return v4, v6, ipsb
+	return v4, v6
 }
 
 func IP2(client *http.Client) (v4, v6 string) {
@@ -196,10 +180,9 @@ func main() {
 	flag.Parse()
 
 	if endpoint != "" {
-		v4, v6, ipsb := IP(endpoint)
+		v4, v6 := IP(endpoint)
 		fmt.Println("v4:", v4)
 		fmt.Println("v6:", v6)
-		fmt.Println("ipsb:", ipsb)
 		return
 	}
 
@@ -240,21 +223,15 @@ func main() {
 			// 		V6       string
 			// 	}{Endpoint: ep, V4: v4, V6: v6}
 			// }
-			tun, tnet, err := netstack.CreateNetTUN(
-				[]netip.Addr{netip.MustParseAddr(tun_v4), netip.MustParseAddr(tun_v6)},
-				[]netip.Addr{netip.MustParseAddr("8.8.8.8")},
-				mtu)
+
+			t, _, client, err := xray_wireguard.GetTun([]string{tun_v4, tun_v6}, mtu)
 			if err != nil {
 				log.Panic(err)
 			}
-			dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
-			client := &http.Client{
-				Transport: &http.Transport{
-					DialContext: tnet.DialContext,
-				},
-				Timeout: 1 * time.Second,
-			}
+			bind := singbox_wireguard.GetBind("127.0.0.1:1", client_id_bytes)
+			dev := device.NewDevice(t, bind, device.NewLogger(device.LogLevelSilent, ""))
 			for ep := range tasks {
+				bind.SetEP(netip.MustParseAddrPort(ep))
 				err = dev.IpcSet(fmt.Sprintf(`private_key=%s
 public_key=%s
 allowed_ip=0.0.0.0/0
@@ -317,7 +294,7 @@ endpoint=%s
 	defer f1.Close()
 	w1 := bufio.NewWriter(f1)
 	for _, r := range results {
-		fmt.Fprintf(w1, "%s %s %s\n", r.Endpoint, r.V4, r.V6)
+		fmt.Fprintf(w1, "%s | %s | %s\n", r.Endpoint, r.V4, r.V6)
 	}
 	w1.Flush()
 

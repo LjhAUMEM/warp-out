@@ -16,4 +16,7 @@
 check build.txt
 
 # Thanks to
+- [ViRb3/wgcf](https://github.com/ViRb3/wgcf)
 - [WireGuard/wireguard-go/blob/master/tun/netstack/examples/http_client.go](https://github.com/WireGuard/wireguard-go/blob/master/tun/netstack/examples/http_client.go)
+- [XTLS/Xray-core/tree/main/proxy/wireguard](https://github.com/XTLS/Xray-core/tree/main/proxy/wireguard)
+- [SagerNet/sing-box/tree/dev-next/transport/wireguard](https://github.com/SagerNet/sing-box/tree/dev-next/transport/wireguard)
